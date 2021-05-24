@@ -1,7 +1,7 @@
 # **VTA snRNA-seq**
 
 
-This page contains R code for analysis of single-nucleus RNA-seq (snRNA-seq) datasets from "An Atlas of Transcriptionally Distinct Cell Populations within the Rat Ventral Tegmental Area".  
+This page contains R code for analysis of single-nucleus RNA-seq (snRNA-seq) datasets from "An Atlas of Transcriptionally Distinct Cell Populations within the Rat Ventral Tegmental Area".  R objects containg UMAP coordindates and other metadata characteristics for the complete dataset and neuronal subclustering are available upon request. 
 
 
 ## **Study design**
