@@ -1,0 +1,1170 @@
+---
+title: "An Atlas of Transcriptionally Defined Cell Types in the Rat Ventral Tegmental Area\n Supplemental Code"
+output: word_document
+author: "Robert A. Phillips III, Jennifer J. Tuscher, Samantha L. Black, Lara Ianov, Jeremy J. Day"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Libraries
+```{r load the libraries}
+suppressPackageStartupMessages(library("data.table"))
+suppressPackageStartupMessages(library("pheatmap"))
+suppressPackageStartupMessages(library("reldist"))
+suppressPackageStartupMessages(library("ggplot2"))
+suppressPackageStartupMessages(library("cowplot"))
+suppressPackageStartupMessages(library("ggrepel"))
+suppressPackageStartupMessages(library("Seurat")) 
+suppressPackageStartupMessages(library("tibble"))
+suppressPackageStartupMessages(library("tidyr"))
+suppressPackageStartupMessages(library("dplyr"))
+```
+## Identification of Major Cell Types within the Rat Ventral Tegmental Area
+The code within this chunk closely follows the workflow demonstrated on the Satija lab website [https://satijalab.org/seurat/articles/pbmc3k_tutorial.html](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html) and from a previously published analysis with code available at [https://gitlab.rc.uab.edu/day-lab](https://gitlab.rc.uab.edu/day-lab). Additional code comments are included in the chunk. A similar workflow is used to identify VTA neuronal subsets. 
+```{r Major clustering}
+#set seed for reproducibility
+set.seed(1234)
+########VTA###########
+Fem1_data  <- Read10X(data.dir = "/data/project/daylab/2020-JD-0044/F1_output/outs/filtered_feature_bc_matrix/")
+Fem2_data  <- Read10X(data.dir = "/data/project/daylab/2020-JD-0044/F2_output/outs/filtered_feature_bc_matrix/")
+Male1_data <- Read10X(data.dir = "/data/project/daylab/2020-JD-0044/M1_output/outs/filtered_feature_bc_matrix/")
+Male2_data <- Read10X(data.dir = "/data/project/daylab/2020-JD-0044/M2_output/outs/filtered_feature_bc_matrix/")
+
+#Create the Seurat object 
+#Using arbitrary cutoffs here. This allows us to interrogate the quality of every cell, while reserving the right to remove some at 
+#a later QC point. 
+Fem1  <- CreateSeuratObject(counts = Fem1_data,min.cells = 1,min.features = 1) #5873 nuclei
+Fem2  <- CreateSeuratObject(counts = Fem2_data,min.cells = 1,min.features = 1) #5150 nuclei
+Male1 <- CreateSeuratObject(counts = Male1_data,min.cells = 1,min.features = 1) #3628 nuclei 
+Male2 <- CreateSeuratObject(counts = Male2_data,min.cells = 1,min.features = 1) #6955 nuclei 
+#21606
+
+#Identify the percentage of reads mapping to mitochondrial genes 
+Fem1  <- PercentageFeatureSet(Fem1, pattern = "^Mt-", col.name = "percent_mito")
+Fem2  <- PercentageFeatureSet(Fem2, pattern = "^Mt-", col.name = "percent_mito")
+Male1 <- PercentageFeatureSet(Male1, pattern = "^Mt-", col.name = "percent_mito")
+Male2 <- PercentageFeatureSet(Male2, pattern = "^Mt-", col.name = "percent_mito")
+
+#VlnPlots to visualize QC metrics
+VlnPlot(Fem1, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
+VlnPlot(Fem2, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
+VlnPlot(Male1, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
+VlnPlot(Male2, features = c("nFeature_RNA", "nCount_RNA", "percent_mito"), ncol = 3,pt.size = 0)
+
+#Subset data to have greater than 200 features and less than 5% of reads mapping to mitochondrial genes 
+Fem1  <- subset(x = Fem1, subset  =  nFeature_RNA > 200 & percent_mito < 5) #5871 nuclei 
+Fem2  <- subset(x = Fem2, subset  =  nFeature_RNA > 200 & percent_mito < 5) #5150 nuclei 
+Male1 <- subset(x = Male1, subset =  nFeature_RNA > 200 & percent_mito < 5) #3628 nuclei 
+Male2 <- subset(x = Male2, subset =  nFeature_RNA > 200 & percent_mito < 5) #6951 nuclei
+#21600
+
+#Log Normalize the data
+Fem1  <- NormalizeData(Fem1, normalization.method = "LogNormalize", scale.factor = 10000)
+Fem2  <- NormalizeData(Fem2, normalization.method = "LogNormalize", scale.factor = 10000)
+Male1 <- NormalizeData(Male1, normalization.method = "LogNormalize", scale.factor = 10000)
+Male2 <- NormalizeData(Male2, normalization.method = "LogNormalize", scale.factor = 10000)
+
+#Find variable features
+Fem1  <- FindVariableFeatures(Fem1, selection.method = "vst", nfeatures = 2000)
+Fem2  <- FindVariableFeatures(Fem2, selection.method = "vst", nfeatures = 2000)
+Male1 <- FindVariableFeatures(Male1, selection.method = "vst", nfeatures = 2000)
+Male2 <- FindVariableFeatures(Male2, selection.method = "vst", nfeatures = 2000)
+
+#Add Metadata attributes
+Fem1$GEM_Well  <- "Fem1"
+Fem2$GEM_Well  <- "Fem2"
+Male1$GEM_Well <- "Male1"
+Male2$GEM_Well <- "Male2"
+
+Fem1$Sex   <- "Female"
+Fem2$Sex   <- "Female"
+Male1$Sex  <- "Male"
+Male2$Sex  <- "Male"
+
+#Integrate the data
+VTA_adult <- FindIntegrationAnchors(object.list = list(Fem1,Fem2,Male1,Male2), dims = 1:25)
+VTA_adult  <- IntegrateData(anchorset = VTA_adult,dims = 1:25)
+
+#Change the default assay
+DefaultAssay(VTA_adult) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+VTA_adult <- ScaleData(VTA_adult,verbose = FALSE)
+VTA_adult <- RunPCA(VTA_adult,npcs = 25,verbose = FALSE) #Compute 50 npcs by default
+# Dimensionality reduction and Clustering
+VTA_adult <- RunUMAP(VTA_adult, reduction = "pca", dims = 1:25)
+VTA_adult <- FindNeighbors(VTA_adult, reduction = "pca", dims = 1:25)
+VTA_adult <- FindClusters(VTA_adult, resolution = 0.2)
+
+#Rename the identities
+VTA_adult <- RenameIdents(object = VTA_adult,
+                          "0" = "Olig-1",
+                          "1" = "Olig-2",
+                          "2" = "Glut-Neuron-1",
+                          "3" = "Astrocyte",
+                          "4" = "Polydendrocyte",
+                          "5" = "Microglia",
+                          "6" = "GABA-Neuron-1",
+                          "7" = "Glut-Neuron-2",
+                          "8" = "Interneuron-1",
+                          "9" = "DA-Neuron",
+                          "10"= "GABA-Neuron-2",
+                          "11"= "OPC-Olig-1",
+                          "12"= "OPC-Olig-2", 
+                          "13"= "Glut-Neuron-3",
+                          "14"= "Mural",
+                          "15"= "Endothelial")
+
+
+
+#Make a celltype column
+VTA_adult$CellType <- Idents(VTA_adult)
+
+#Plot the UMAP
+DimPlot(object = VTA_adult,reduction = "umap",label = TRUE,repel = TRUE) + NoLegend()
+```
+
+##DEG Testing for Major Cell Populations
+```{r DEGs Major CellTypes,eval=FALSE}
+##DEG Testing
+################DEG TESTING MAJOR CELTYPES#########################
+DefaultAssay(VTA_adult) <- "RNA"
+#DEG Analysis
+#Build a list to input DEGs into.
+Cluster_Lists <- vector(mode = "list",length = length(unique(Idents(VTA_adult))))
+#Change the names of the list to the cell types
+names(Cluster_Lists) <- as.character(unique(Idents(VTA_adult)))
+#Build a dataframe that is the number of genes in each cell type specific dataframe
+No_Genes <- data.frame(CellType = names(Cluster_Lists),
+                       No_Genes = NA)
+#Using modified Seurat source code
+for(i in names(Cluster_Lists)){
+  #Print the element so we can actually see the cell type as we loop through
+  print(i)
+  #Create a dataframe in each element of the list where FC will be the log2FC and gene will be the name
+  Cluster_Lists[[i]] <- data.frame(log2FC = (log2(rowMeans(expm1(x = as.matrix(GetAssayData(object = VTA_adult,slot = "data",assay = "RNA")[,WhichCells(object = VTA_adult,idents = i)]))))) -
+                                     log2(rowMeans(expm1(x = as.matrix(GetAssayData(object = VTA_adult,slot = "data",assay = "RNA")[,WhichCells(object = VTA_adult,idents = as.character(unique(Idents(VTA_adult))[which(unique(Idents(VTA_adult))!=i)]))])))),
+                                   gene = row.names(as.matrix(GetAssayData(object = VTA_adult,slot = "data",assay= "RNA"))[,WhichCells(object = VTA_adult,idents = i)]))
+  #Remove infinite values
+  Cluster_Lists[[i]] <-  Cluster_Lists[[i]][!is.infinite(Cluster_Lists[[i]]$log2FC),]
+  #remove NaN values
+  Cluster_Lists[[i]] <-  Cluster_Lists[[i]][!is.nan(Cluster_Lists[[i]]$log2FC),]
+  #paste the number of genes left
+  No_Genes[which(No_Genes$CellType ==i),"No_Genes"] <- nrow(Cluster_Lists[[i]])
+}
+
+write.table(x         = No_Genes,
+            file      = "/data/project/daylab/2020-JD-0044/Analysis/No_of_Genes_Tested_Per_Cluster_VTA_Major_Clusters.txt",
+            sep       = "\t",
+            col.names = TRUE,
+            row.names = FALSE,
+            quote     = FALSE)
+
+#Now test genes for significance
+for(i in names(Cluster_Lists)){
+  print(i)
+  #Create a data.frame where the rownames are the cells within the clusters
+  group.info <- data.frame(row.names = c(WhichCells(object = VTA_adult,idents = i),
+                                         WhichCells(object = VTA_adult,idents = as.character(unique(Idents(VTA_adult))[which(unique(Idents(VTA_adult))!=i)]))))
+  #Create a group column where cocaine is Group1 and saline is group2. The way to do that is to search the rows names for Cocaine and Saline cell identities
+  group.info[WhichCells(object = VTA_adult,idents = i), "group"] <- "Group1"
+  group.info[WhichCells(object = VTA_adult,idents = as.character(unique(Idents(VTA_adult))[which(unique(Idents(VTA_adult))!=i)])), "group"] <- "Group2"
+  #Make the group column a factor so it can be tested with the wilcox
+  group.info[, "group"] <- factor(x = group.info[, "group"])
+  #Create an expression matrix where the row.names are the genes found within that cluster - do this by running row.names(Cluster_Lists[[i]])
+  #the columns should be row.names(group.info) which are the cells within that cluster
+  #Drop maintains the structure of the matrix when subsetting, which is needed when pulling the expression matrix
+  #Pull counts from log-normalized matrix
+  data.use <- GetAssayData(object = VTA_adult,slot = "data",assay = "RNA")[row.names(Cluster_Lists[[i]]), rownames(x = group.info), drop = FALSE]
+  #Loop through the rows in the expression matrix which are the genes
+  for(l in 1:length(row.names(data.use))){
+    #Calculate p-values for every gene
+    #Do this by entering the element of the list for the specific cluster that we are running. i will always be the cell type
+    #row.names(data.use)[l] will be the gene name
+    #wilcox.test will test gene by group to see if there are any differences. Then by adding $p.value we can pull only the p-value from the test
+    Cluster_Lists[[i]][row.names(data.use)[l],"p.val"] <- wilcox.test(data.use[row.names(data.use)[l], ] ~ group.info[,"group"])$p.value
+    Cluster_Lists[[i]][row.names(data.use)[l],"p.adj"] <- p.adjust(Cluster_Lists[[i]][row.names(data.use)[l],"p.val"],
+                                                                   method = "bonferroni",
+                                                                   n      = nrow(Cluster_Lists[[i]]))
+  }
+  write.table(x         = Cluster_Lists[[i]],
+              file      = paste0("/data/project/daylab/2020-JD-0044/Analysis/Major_Cluster_Marker_Genes/",i,"_DEGs.txt"),
+              col.names = TRUE,
+              row.names = FALSE,
+              quote     = FALSE,
+              sep       = "\t")
+}
+```
+##Sex Differences Analysis
+```{r Sex Differences Analysis, eval=FALSE}
+#Create a metadata column combining cell type and sex information. 
+VTA_adult$CellType_Sex <- paste(VTA_adult$CellType, VTA_adult$Sex, sep = "_")
+############# Sex differences analysis ###############
+#Plot UMAP by sex using sex index colors
+DimPlot(VTA_adult, reduction = "umap", group.by = "Sex", pt.size = 0.1, cols = c("#FF2F90","#0094FF")) + coord_equal()
+## Calculate fraction of cells in each sex group
+#Make Idents celltype sex and build dataframe with every cluster and columns for male and female cells
+Idents(VTA_adult) <- VTA_adult$CellType_Sex
+Idents_Sex <- as.data.frame(matrix(nrow = 16,ncol = 3))
+names(Idents_Sex) <- c("CellType","Male","Female")
+#Get male and female number of cells 
+for(i in 1:length(levels(VTA_adult$CellType))){
+  Idents_Sex[i,"CellType"] <- levels(VTA_adult$CellType)[i]
+  Idents_Sex[i,"Male"] <- length(WhichCells(object = VTA_adult,idents = paste(levels(VTA_adult$CellType)[i],"Male",sep = "_")))
+  Idents_Sex[i,"Female"]  <- length(WhichCells(object = VTA_adult,idents = paste(levels(VTA_adult$CellType)[i],"Female",sep = "_")))
+}
+#Calculate proportions
+for(i in 1:nrow(Idents_Sex)){
+  Idents_Sex[i,"Male_Frac"] <- (Idents_Sex[i,"Male"]/as.numeric(table(VTA_adult$Sex)["Male"]))
+  Idents_Sex[i,"Female_Frac"] <- (Idents_Sex[i,"Female"]/as.numeric(table(VTA_adult$Sex)["Female"]))
+}
+#Write out file
+write.csv(Idents_Sex, "Proportions_by_sex.csv")
+```
+##Identifying Transcriptionally Distinct Neuronal Subpopulations
+```{r Subset}
+############Subclustering DA/GABA/Glut Neurons
+DefaultAssay(VTA_adult) <- "RNA"
+#Switch the identities back to celltype 
+Idents(VTA_adult) <- VTA_adult$CellType
+#Subset for DA/GABA/Glut Neurons
+VTA_subset <- subset(VTA_adult,idents = c("Glut-Neuron-1","Glut-Neuron-2","Glut-Neuron-3","Interneuron-1","GABA-Neuron-1","GABA-Neuron-2","DA-Neuron"))
+#Look at the umap
+DimPlot(object = VTA_subset,label = TRUE,repel = TRUE) + NoLegend()
+
+VTA_subset <- FindVariableFeatures(VTA_subset,selection.method = "vst",nfeatures = 2000)
+VTA_subset <- ScaleData(VTA_subset,verbose = FALSE)
+VTA_subset <- RunPCA(VTA_subset,npcs = 15,verbose = FALSE) #Compute 50 npcs by default
+# Dimensionality reduction and Clustering
+VTA_subset <- RunUMAP(VTA_subset, reduction = "pca", dims = 1:15)
+VTA_subset <- FindNeighbors(VTA_subset, reduction = "pca", dims = 1:15)
+VTA_subset <- FindClusters(VTA_subset, resolution = 0.2)
+
+DimPlot(object = VTA_subset,label = TRUE) + NoLegend()
+```
+
+##Generating Heatmaps for Dopamine,Glutamate, and GABA Marker Genes in VTA Neuronal Subclusters
+```{r Subset Heatmaps,eval = FALSE}
+#New subset
+Cluster_Lists <- vector(mode = "list",length = 11)
+#name every element of the list the numeric identity from subclustering
+names(Cluster_Lists) <- c(0:10)
+#Within each element of the list, create a dataframe that will contain the percentage of cells within the cluster expressing two genes 
+for(i in names(Cluster_Lists)){
+  Cluster_Lists[[i]] <- data.frame(Th        = rep(NA,10),
+                                   Ddc       = rep(NA,10),
+                                   Slc6a3    = rep(NA,10),
+                                   Slc18a2   = rep(NA,10),
+                                   Slc17a6   = rep(NA,10),
+                                   Grm2      = rep(NA,10),
+                                   Gad1      = rep(NA,10),
+                                   Gad2      = rep(NA,10),
+                                   Slc32a1   = rep(NA,10),
+                                   Slc6a1    = rep(NA,10),
+                                   row.names = c("Th","Ddc","Slc6a3","Slc18a2", #DA
+                                                 "Slc17a6","Grm2",
+                                                 "Gad1","Gad2","Slc32a1","Slc6a1"))
+  
+}
+#Calculate the percentage of cells expressing two genes 
+for(i in c(0:10)){
+  #Subset the VTA_subset object for a single identity
+  VTA_subset2 <- subset(VTA_subset,idents = i)
+  #Pull the count values for the 11 genes and transpose the dataframe so that cells are rows and genes are columns 
+  x <- as.data.frame(t(as.matrix(GetAssayData(object = VTA_subset2,assay = "RNA")[c("Th","Ddc","Slc6a3","Slc18a2", #DA
+                                                                          "Slc17a6","Grm2","Slc17a7",#Glut
+                                                                          "Gad1","Gad2","Slc32a1","Slc6a1"),])))
+  #Now loop through the 11 genes of interest by looping through the column names of each dataframe created in the first step 
+  for(l in colnames(Cluster_Lists[[as.character(i)]])){
+    #Get all of the genes that are not equal to the iteration of the loop
+    Other_Genes <- colnames(Cluster_Lists[[as.character(i)]])[which(colnames(Cluster_Lists[[as.character(i)]])!=l)]
+    for(k in Other_Genes){
+      #Calculate the percentage of cells expressing the l and k, both of which are some combination of the 11 genes
+      #Dividing by ncol(VTA_subset2) divides by the number of cells within the cluster of interest 
+      Cluster_Lists[[as.character(i)]][l,k] <- length(which(x[,l] > 0 & x[,k] > 0))/ncol(VTA_subset2)
+    }
+  }
+}
+
+for(i in names(Cluster_Lists)){
+pdf(file = paste0("/data/project/daylab/2020-JD-0044/Analysis/Neurotransmitter_Heatmaps/Fig",i,"_heatmap.pdf"),
+    height = 8,
+    width = 8)
+  breaksList <- seq(0, 1, by = 0.05)
+  pheatmap(mat = Cluster_Lists[[i]],
+           color = colorRampPalette(c("gray96","peachpuff","goldenrod1","orange","darkorange","red","red4"))(length(breaksList)),
+           breaks = breaksList,
+           cluster_rows = FALSE,
+           cluster_cols = FALSE,
+           main = paste("Cluster",i,sep = " "))
+  dev.off()
+}
+```
+
+##Identification of VTA Neuronal Subset DEGs
+```{r VTA_subset DEGs,eval = FALSE}
+######DEGS 
+VTA_subset <- RenameIdents(object = VTA_subset,
+                           "0" = "Zero",
+                           "1" = "One",
+                           "2" = "Two",
+                           "3" = "Three",
+                           "4" = "Four",
+                           "5" = "Five",
+                           "6" = "Six",
+                           "7" = "Seven",
+                           "8" = "Eight",
+                           "9" = "Nine",
+                           "10" = "Ten")
+#VTA_subset$Character_Ident <- Idents(VTA_subset)
+#Change the default assay to RNA
+DefaultAssay(VTA_subset) <- "RNA"
+#DEG Analysis 
+#Build a list to input DEGs into. 
+Cluster_Lists <- vector(mode = "list",length = 11)
+#Change the names of the list to the cell types 
+names(Cluster_Lists) <- levels(Idents(VTA_subset))[1:11]
+#Build a dataframe that is the number of genes in each cell type specific dataframe 
+No_Genes <- data.frame(CellType = names(Cluster_Lists),
+                       No_Genes = NA)
+#Using modified Seurat source code 
+for(i in names(Cluster_Lists)){
+  #Print the element so we can actually see the cell type as we loop through
+  print(i)
+  #Create a dataframe in each element of the list where FC will be the log2FC and gene will be the name
+  Cluster_Lists[[i]] <- data.frame(log2FC = (log2(rowMeans(expm1(x = as.matrix(GetAssayData(object = VTA_subset,slot = "data",assay = "RNA")[,WhichCells(object = VTA_subset,idents = i)]))))) -
+                                               log2(rowMeans(expm1(x = as.matrix(GetAssayData(object = VTA_subset,slot = "data",assay = "RNA")[,WhichCells(object = VTA_subset,idents = as.character(unique(Idents(VTA_subset))[which(unique(Idents(VTA_subset))!=i)]))])))),
+                                   gene = row.names(as.matrix(GetAssayData(object = VTA_subset,slot = "data",assay= "RNA"))[,WhichCells(object = VTA_subset,idents = i)]))
+  #Remove infinite values
+  Cluster_Lists[[i]] <-  Cluster_Lists[[i]][!is.infinite(Cluster_Lists[[i]]$log2FC),]
+  #remove NaN values
+  Cluster_Lists[[i]] <-  Cluster_Lists[[i]][!is.nan(Cluster_Lists[[i]]$log2FC),]
+  #paste the number of genes left 
+  No_Genes[which(No_Genes$CellType ==i),"No_Genes"] <- nrow(Cluster_Lists[[i]])
+}
+
+
+write.table(x         = No_Genes,
+            file      = "/data/project/daylab/2020-JD-0044/Analysis/No_of_Genes_Tested_Per_Cluster_VTA_Neuronal_Subset.txt",
+            sep       = "\t",
+            col.names = TRUE,
+            row.names = FALSE,
+            quote     = FALSE)
+
+#Now test genes for significance 
+for(i in names(Cluster_Lists)){
+  print(i)
+  #Create a data.frame where the rownames are the cells within the clusters 
+  group.info <- data.frame(row.names = c(WhichCells(object = VTA_subset,idents = i),
+                                         WhichCells(object = VTA_subset,idents = as.character(unique(Idents(VTA_subset))[which(unique(Idents(VTA_subset))!=i)]))))
+  #Create a group column where cocaine is Group1 and saline is group2. The way to do that is to search the rows names for Cocaine and Saline cell identities
+  group.info[WhichCells(object = VTA_subset,idents = i), "group"] <- "Group1"
+  group.info[WhichCells(object = VTA_subset,idents = as.character(unique(Idents(VTA_subset))[which(unique(Idents(VTA_subset))!=i)])), "group"] <- "Group2"
+  #Make the group column a factor so it can be tested with the wilcox 
+  group.info[, "group"] <- factor(x = group.info[, "group"])
+  #Create an expression matrix where the row.names are the genes found within that cluster - do this by running row.names(Cluster_Lists[[i]])
+  #the columns should be row.names(group.info) which are the cells within that cluster 
+  #Drop maintains the structure of the matrix when subsetting, which is needed when pulling the expression matrix
+  #Pull counts from log-normalized matrix
+  data.use <- GetAssayData(object = VTA_subset,slot = "data",assay = "RNA")[row.names(Cluster_Lists[[i]]), rownames(x = group.info), drop = FALSE]
+  #Loop through the rows in the expression matrix which are the genes
+  for(l in 1:length(row.names(data.use))){
+    #Print the progress of the loop
+    #progress(l,max.value = length(row.names(data.use)))
+    #Calculate p-values for every gene 
+    #Do this by entering the element of the list for the specific cluster that we are running. i will always be the cell type
+    #row.names(data.use)[l] will be the gene name
+    #wilcox.test will test gene by group to see if there are any differences. Then by adding $p.value we can pull only the p-value from the test 
+    Cluster_Lists[[i]][row.names(data.use)[l],"p.val"] <- wilcox.test(data.use[row.names(data.use)[l], ] ~ group.info[,"group"])$p.value
+    Cluster_Lists[[i]][row.names(data.use)[l],"p.adj"] <- p.adjust(Cluster_Lists[[i]][row.names(data.use)[l],"p.val"],
+                                                                   method = "bonferroni",
+                                                                   n      = nrow(Cluster_Lists[[i]]))
+  }
+  write.table(x         = Cluster_Lists[[i]],
+              file      = paste0("/data/project/daylab/2020-JD-0044/Analysis/Neuronal_Subset_Cluster/",i,"_DEGs.txt"),
+              col.names = TRUE,
+              row.names = FALSE,
+              quote     = FALSE,
+              sep       = "\t")
+}
+```
+
+##Calculation of Gini Coefficient and Plots for Figure 4
+```{r Gini Calculation and Associated Plots, eval=FALSE}
+###Read in the DEG dataframe for cluster 5 
+cluster5 <- read.table(file = "/data/project/daylab/2020-JD-0044/Analysis/Neuronal_Subset_Cluster/Five_DEGs.txt",
+                       sep  = "\t",
+                       header = TRUE)
+cluster9 <- read.table(file = "/data/project/daylab/2020-JD-0044/Analysis/Neuronal_Subset_Cluster/Nine_DEGs.txt",
+                       sep  = "\t",
+                       header = TRUE)
+#Figure out which genes are shared 
+Shared_Genes <- intersect(subset(cluster5,subset=(p.adj < 0.05 & log2FC > 0.5))$gene,
+                          subset(cluster9,subset=(p.adj < 0.05 & log2FC > 0.5))$gene)
+#Make a shared column
+cluster9$shared <- ifelse(cluster9$gene %in% Shared_Genes,
+                          "Yes",
+                          "No")
+cluster5$shared <- ifelse(cluster5$gene %in% Shared_Genes,
+                          "Yes",
+                          "No")
+#Set the Seurat assay to RNA
+DefaultAssay(VTA_subset) <- "RNA"
+#Set identities back to the integer values instead of the characters used for DEG testing
+Idents(VTA_subset) <- VTA_subset$RNA_snn_res.0.2
+#Calculate the cluster-specific average expression values for every gene
+CellAverages <- AverageExpression(VTA_subset)
+#Pull the RNA values
+RNA <- CellAverages$RNA
+#Calculate the Gini coefficient, maximum/mean gene expression value, and ratio
+Gini_calc <- apply(RNA, 1, gini)
+max_RNA <- apply(RNA, 1, max)
+mean_RNA <- apply(RNA, 1, mean)
+Ratio <- max_RNA/mean_RNA
+#Create a dataframe consisting of the Gini coefficient, maximum/mean gene expression value, and ratio
+Gini_dataframe <- data.frame(Gini_calc, max_RNA, mean_RNA, Ratio, RNA)
+#Create a column of gene names
+Gini_dataframe$Gene <- rownames(Gini_dataframe)
+#Remove all NAs
+Gini_dataframe <- na.omit(Gini_dataframe)
+#Create a logX5 df
+Gini_dataframe_logX5 <- Gini_dataframe
+#calculate log10 for cluster 5
+Gini_dataframe_logX5$log_X5 <- log10(Gini_dataframe_logX5$X5)
+#Remove the Infinite values
+Gini_dataframe_logX5 <- Gini_dataframe_logX5[!is.infinite(Gini_dataframe_logX5$log_X5),]
+#Now merge 
+Gini_dataframe_logX5 <- merge(x = Gini_dataframe_logX5,
+                              y = cluster5,
+                              by.x = "Gene",
+                              by.y = "gene")
+#plot
+p1 <- ggplot(data = Gini_dataframe_logX5, aes(x = log_X5,y = Gini_calc)) +
+  geom_point(color = "lightgrey") +
+  geom_point(data = subset(Gini_dataframe_logX5,subset=(p.adj < 0.05 & log2FC > 0.5 & shared == "No")), color = "#f3766e") +
+  geom_point(data = subset(Gini_dataframe_logX5,subset=(p.adj < 0.05 & log2FC > 0.5 & shared == "Yes")),color = "gray50") +
+  geom_density2d(color = "red") +
+  geom_text_repel(data =  subset(Gini_dataframe_logX5, subset= (Gene == "Gch1" | Gene == "Th" | Gene == "Drd2" | Gene == "Slc18a2" | Gene == "Slc6a3")),
+                  label = subset(Gini_dataframe_logX5, subset= (Gene == "Gch1" | Gene == "Th" | Gene == "Drd2" | Gene == "Slc18a2" | Gene == "Slc6a3"))$Gene,
+                  min.segment.length = 0,
+                  box.padding = 0.5) +
+  theme_bw() +
+  ylim(c(0,1)) +
+  NoGrid() +
+  ylab("Gini coefficient") +
+  xlab("log10(Cluster 5 Expression Values)") +
+  ggtitle("Classically-defined DA Neurons") +
+  theme(plot.title = element_text(hjust = 0.5))
+#Create a logX9 df
+Gini_dataframe_logX9 <- Gini_dataframe
+#calculate log10 for cluster 5
+Gini_dataframe_logX9$log_X9 <- log10(Gini_dataframe_logX9$X9)
+#Remove the infinite values
+Gini_dataframe_logX9 <- Gini_dataframe_logX9[!is.infinite(Gini_dataframe_logX9$log_X9),]
+#Now merge 
+Gini_dataframe_logX9 <- merge(x = Gini_dataframe_logX9,
+                              y = cluster9,
+                              by.x = "Gene",
+                              by.y = "gene")
+p2 <- ggplot(data = Gini_dataframe_logX9, aes(x = log_X9,y = Gini_calc)) +
+  geom_point(color = "lightgrey") +
+  geom_point(data = subset(Gini_dataframe_logX9,subset=(p.adj < 0.05 & log2FC > 0.5 & shared == "No")), color = "#e18a26") +
+  geom_point(data = subset(Gini_dataframe_logX9,subset=(p.adj < 0.05 & log2FC > 0.5 & shared == "Yes")),color = "gray50") +
+  geom_density2d(color = "red") +
+  geom_text_repel(data =  subset(Gini_dataframe_logX9, subset= (Gene == "Slc26a7" | Gene == "Wnt2" | Gene == "Crhbp")),
+                  label = subset(Gini_dataframe_logX9, subset= (Gene == "Slc26a7" | Gene == "Wnt2" | Gene == "Crhbp"))$Gene,
+                  min.segment.length = 0,
+                  box.padding = 0.5) +
+  theme_bw() +
+  NoGrid() +
+  ylim(c(0,1)) +
+  ylab("Gini coefficient") +
+  xlab("log10(Cluster 9 Expression Values)") +
+  ggtitle("Combinatorial Neurons") +
+  theme(plot.title = element_text(hjust = 0.5))
+  
+ 
+p3 <- p1 + p2
+ggsave(plot = p3,
+       filename = "/data/project/daylab/2020-JD-0044/Analysis/Gini_Coefficient_Plots.pdf",
+       height = 8,
+       width = 12)
+```
+
+##Generation of Gene Lists for MAGMA 
+This analysis utilizes a curated file of vertebrate homology from the JAX lab. This file is updated regularly. Thus, some rat-human gene transfers may differ. However, we have performed the analysis with updated versions of the JAX vertebrate homology file and final MAGMA statistics have not changed
+```{r FINAL MAGMA Gene list generation,eval=FALSE}
+###FINAL Generation  of MAGMA gene list
+#########Calculate the percent of cells expressing a gene
+#Create a list
+Pct_Exp_List <- vector(mode = "list",length = length(levels(VTA_adult)))
+#Name each element 
+names(Pct_Exp_List) <- levels(Idents(VTA_adult))
+#Run the calculations
+for(i in levels(Idents(VTA_adult))){
+  #Create a dataframe where the first column is the gene and the second column is the pct_expressed
+  Pct_Exp_List[[i]] <- data.frame(Gene          = NA,
+                                  Pct_Expressed = NA)
+  #Pull the counts 
+  data <- as.matrix(GetAssayData(VTA_adult, assay = "RNA",slot = "data")[, WhichCells(VTA_adult, ident = i)])
+  for(l in 1:nrow(data)){
+    #Create a dataframe to merge with the dataframe within each list
+    x <- data.frame(Gene          = rownames(data)[l], #provides gene name
+                    Pct_Expressed = as.numeric(table(data[l,]>0)["TRUE"])/ncol(data)) #number of cells expressing gene/total number of cells
+    Pct_Exp_List[[i]] <- rbind(Pct_Exp_List[[i]],x)
+  }
+  #Remove the first row by omitting NAs
+  Pct_Exp_List[[i]] <- na.omit(Pct_Exp_List[[i]])
+  #Subset for only those genes that are expressed in >10% of cells. 
+  Pct_Exp_List[[i]] <- subset(Pct_Exp_List[[i]],subset=(Pct_Expressed > 0.10))
+}
+
+#Build a list to input DEGs into. 
+Cluster_Lists <- vector(mode = "list",length = length(unique(Idents(VTA_adult))))
+#Change the names of the list to the cell types 
+names(Cluster_Lists) <- as.character(unique(Idents(VTA_adult)))
+#Make a list for subset too
+Cluster_Lists_subset <- vector(mode = "list",length = length(unique(Idents(VTA_adult))))
+#Change the names of the list to the cell types 
+names(Cluster_Lists_subset) <- as.character(unique(Idents(VTA_adult)))
+
+#Now read in everything
+for(i in names(Cluster_Lists)){
+  #Read in the DEG lists
+  Cluster_Lists[[i]] <- read.table(paste0("/data/project/daylab/2020-JD-0044/Analysis/Major_Cluster_Marker_Genes/",i,"_DEGs.txt"),sep = "\t",header = TRUE)
+  #Subset for genes that are enriched (log2FC >0.5) and with a bonferroni adjusted p-value < 1e-12
+  #MAGMA will take a two column dataframe as input where the first column is the "Set" (CellType) and the second column is the gene
+  Cluster_Lists_subset[[i]] <- data.frame(Set  = rep(i,nrow(subset(Cluster_Lists[[i]],subset=(p.adj < 1e-12 & log2FC > 0.5)))),
+                                          Gene = subset(Cluster_Lists[[i]],subset=(p.adj < 1e-12 & log2FC > 0.5))$gene)
+  #Merge with the pct_Expressed dataframe with the same name to keep only those DEGs that are expressed in at least 10% of cells. 
+  Cluster_Lists_subset[[i]] <- merge(x = Cluster_Lists_subset[[i]],
+                                     y = Pct_Exp_List[[i]],
+                                     by = "Gene")
+}
+
+
+#Now merge the lists to create a large dataframe
+Cluster_Lists_subset_df_all <- do.call(what = "rbind",Cluster_Lists_subset)
+
+#From LieberInstitute github, thanks y'all
+hom <- read.delim("http://www.informatics.jax.org/downloads/reports/HOM_AllOrganism.rpt",
+                  as.is=TRUE)
+#Pull human and rat
+hom_hs  <- hom[hom$Common.Organism.Name == "human", ]
+hom_rat <- hom[hom$Common.Organism.Name == "rat", ]
+
+#Create new columns for the dataframes 
+Cluster_Lists_subset_df_all$Human_Gene_EntrezGene <- NA
+#Now map to the human homolog
+#for the whole gene set
+for(i in 1:nrow(Cluster_Lists_subset_df_all)){
+  #Only run the code if a homolog is found. 
+  if(length(hom_hs[hom_hs$HomoloGene.ID %in% hom_rat[hom_rat$Symbol %in% Cluster_Lists_subset_df_all[i,"Gene"],"HomoloGene.ID"],"EntrezGene.ID"]) > 0){
+    Cluster_Lists_subset_df_all[i,"Human_Gene_EntrezGene"] <- hom_hs[hom_hs$HomoloGene.ID %in% hom_rat[hom_rat$Symbol %in% Cluster_Lists_subset_df_all[i,"Gene"],"HomoloGene.ID"],"EntrezGene.ID"][1]
+  }else{
+    next
+  }
+}
+
+#Some rat genes will not have a human ortholog. Thus, we omit all NA values. 
+Cluster_Lists_subset_df_all <- na.omit(Cluster_Lists_subset_df_all)
+
+#write out the gene list
+write.table(x         =  Cluster_Lists_subset_df_all[,c("Set","Human_Gene_EntrezGene")], #Just need the Set/CellType and the entrez gene id
+            file      = "/data/project/daylab/2020-JD-0044/Analysis/MAGMA/CellType_HumanMarkerGenes.txt",
+            sep       = "\t",
+            row.names = FALSE,
+            quote     = FALSE,
+            col.names = TRUE)
+```
+
+##Generate Heatmap from MAGMA Gene-Set Analysis
+```{r Generate MAGMA Heatmap,eval=FALSE}
+#First create a dataframe in which the columns are the GWAS Phenotypes and the rows are the cell types
+gwas_df<- as.data.frame(matrix(ncol = 11,
+                               nrow = 16))
+
+colnames(gwas_df) <- c("AD",
+                       "Adhd",
+                       "ASD",
+                       "BIP",
+                       "PD",
+                       "SCZ",
+                       "AgeofInit",
+                       "CigsPerDay",
+                       "DrinksPerWeek",
+                       "SmokingCessation",
+                       "SmokingInitiation")
+rownames(gwas_df) <- c("DA-Neuron",
+                       "Glut-Neuron-1",
+                       "Glut-Neuron-2",
+                       "Glut-Neuron-3",
+                       "GABA-Neuron-1",
+                       "GABA-Neuron-2",
+                       "Interneuron-1",
+                       "Astrocyte",
+                       "Microglia",
+                       "Olig-1",
+                       "Olig-2",
+                       "OPC-Olig-1",
+                       "OPC-Olig-2",
+                       "Polydendrocyte",
+                       "Mural",
+                       "Endothelial")
+
+#Read in the MAGMA output into the dataframe created above
+for(i in colnames(gwas_df)){
+  x <- read.table(file = paste0("/data/project/daylab/2020-JD-0044/Analysis/MAGMA/MAGMA_Results/10kb/",i,".gsa.out"),
+                  comment.char = "#",
+                  header = TRUE)
+  rownames(x) <- x$VARIABLE
+  for(l in rownames(gwas_df)){
+    gwas_df[l,i] <- x[l,"P"]
+  }
+}
+
+#Change the dataframe so that the columns are celltype, GWAS Phenotype, and empirical p-value
+dt <- gwas_df %>%
+  rownames_to_column() %>%
+  gather(colname, value, -rowname)
+
+#Create a new column containing the -log10(empirical p-value)
+dt$log10p <- -log10(dt$value)
+
+#make a new column to input FDR values and stars
+dt$FDR <- NA
+dt$stars <- NA
+#generate a column for stars and a p.adjusted column
+for(i in 1:nrow(dt)){
+  dt[i,"FDR"] <- p.adjust(p = dt$value[i],method = "fdr",n = length(levels(VTA_adult)))
+  if(dt[i,"FDR"]  <= 0.0001){
+    dt[i,"stars"] <- "****"
+  }else{
+    if( dt[i,"FDR"] <=0.001){
+      dt[i,"stars"]  <- "***"
+    }else{
+      if( dt[i,"FDR"] <=0.01){
+        dt[i,"stars"]  <- "**"
+      }else{
+        if( dt[i,"FDR"] <=0.05){
+          dt[i,"stars"]  <- "*"
+        }else{
+          dt[i,"stars"]  <- ""
+        }
+      }
+    }
+  }
+}
+
+#Make the column and rownames factors and put in order
+dt$rowname <- factor(x = dt$rowname,levels = rev(c("DA-Neuron",
+                                                   "Glut-Neuron-1",
+                                                   "Glut-Neuron-2",
+                                                   "Glut-Neuron-3",
+                                                   "GABA-Neuron-1",
+                                                   "GABA-Neuron-2",
+                                                   "Interneuron-1",
+                                                   "Astrocyte",
+                                                   "Microglia",
+                                                   "Olig-1",
+                                                   "Olig-2",
+                                                   "OPC-Olig-1",
+                                                   "OPC-Olig-2",
+                                                   "Polydendrocyte",
+                                                   "Mural",
+                                                   "Endothelial")))
+
+#Now we are going to change up the some of the names of the GWAS to something a bit more ~*spicy*~
+#dt$colname <- gsub(x = dt$colname,pattern = "CUD",replacement = "Cannabis Use Disorder")
+dt$colname <- gsub(x = dt$colname,pattern = "AD",replacement = "Alzheimer's Disease")
+dt$colname <- gsub(x = dt$colname,pattern = "Adhd",replacement = "ADHD")
+dt$colname <- gsub(x = dt$colname,pattern = "ASD",replacement = "Autsim Spectrum Disorder")
+dt$colname <- gsub(x = dt$colname,pattern = "BIP",replacement = "Bipolar Disorder")
+dt$colname <- gsub(x = dt$colname,pattern = "PD",replacement = "Parkinson's Disease")
+dt$colname <- gsub(x = dt$colname,pattern = "SCZ",replacement = "Schizophrenia")
+dt$colname <- gsub(x = dt$colname,pattern = "AgeofInit",replacement = "Age of Initiation\nof Regular Smoking")
+dt$colname <- gsub(x = dt$colname,pattern = "CigsPerDay",replacement = "Cigarettes per day")
+dt$colname <- gsub(x = dt$colname,pattern = "DrinksPerWeek",replacement = "Drinks Per Week")
+dt$colname <- gsub(x = dt$colname,pattern = "SmokingCessation",replacement = "Smoking Cessation")
+dt$colname <- gsub(x = dt$colname,pattern = "SmokingInitiation",replacement = "Smoking Initiation")
+#Refactor the gwas 
+dt$colname <- factor(x = dt$colname,levels = c("Alzheimer's Disease",
+                                               "Parkinson's Disease",
+                                               "Bipolar Disorder",
+                                               "Schizophrenia",
+                                               "ADHD",
+                                               "Autsim Spectrum Disorder",
+                                               "Age of Initiation\nof Regular Smoking",
+                                               "Cigarettes per day",
+                                               "Drinks Per Week",
+                                               "Smoking Cessation",
+                                               "Smoking Initiation"))
+#Generate the heatmap
+HM <- ggplot(dt,aes(x = colname, y = rowname, fill = log10p)) +
+  geom_tile(color = "black",size = 0.5) +
+  geom_text(aes(label = stars)) +
+  scale_fill_gradient(low="white",high="red") +
+  labs(x = "GWAS Phenotype",
+       y = "Cell Type",
+       fill = "-log10(Empircial p)",
+       title = "10kb Window") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45,hjust = 1)) +
+  NoGrid() 
+
+
+ggsave(filename = "/data/project/daylab/2020-JD-0044/Analysis/MAGMA/MAGMA_Heatmap.pdf",
+       plot = HM,
+       height = 14,
+       width = 14)
+
+
+###Now edit the dt dataframe to make a supplemental table 
+dt$colname <- gsub(x = dt$colname,pattern = "Age of Initiation\nof Regular Smoking",replacement = "Age of Initiation of Regular Smoking")
+colnames(dt)[c(1:4,6)] <- c("CellType","GWAS Phenotype","Empirical p-Value","-log10(Empirical p-value)","Level of Significance")
+write.table(x         = dt,
+            file      = "/data/project/daylab/2020-JD-0044/Analysis/MAGMA/MAGMA_Output_Stats.txt",
+            col.names = TRUE,
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+```
+## Generation of Heatmaps Displaying Risk Genes for Selected GWAS
+```{r GWAS single gene heatmaps, eval = FALSE}
+# Make heatmap with selected list of gene markers for MAGMA figure
+# Generate AD gene list
+AD_genes <- c("Abca7",
+              "Adam10",
+              "Adamts4",
+              "Alpk2",
+              "Aph1b",
+              "Apoe",
+              "Bcam",
+              "Bcl3",
+              "Bin1",
+              "Bloc1s3",
+              "Cass4",
+              "Cblc",
+              "Cd2ap",
+              "Cd33",
+              "Ceacam20",
+              "Chrna2",
+              "Ckm",
+              "Clasrp",
+              "Clptm1",
+              "Clu",
+              "Cnn2",
+              "Cntnap2",
+              "Cr1l",
+              "Exoc3l2",
+              "Gemin7",
+              "Hesx1",
+              "Igsf23",
+              "Il17rd",
+              "Inpp5d",
+              "Kat8",
+              "Mark4",
+              "Meiosin",
+              "Ms4a2",
+              "Ms4a4a",
+              "Nectin2",
+              "Nkpd1",
+              "Picalm",
+              "Pilra",
+              "Ptk2b",
+              "Pvr",
+              "Relb",
+              "Slc24a4",
+              "Sorl1",
+              "Stag3",
+              "Tomm40",
+              "Trem2",
+              "Unc5cl",
+              "Zcwpw1")
+
+# Generate SCZ gene lists - one from PGC 2014 Nature paper 
+SCZ_genes <- c("Adamtsl3",
+               "Atp2a2",
+               "Bank1",
+               "Bcl11b",
+               "Brinp2",
+               "Cacna1c",
+               "Cacnb2",
+               "Chrna3",
+               "Clcn3",
+               "Cnot1",
+               "Cntn4",
+               "Coa8",
+               "Csmd1",
+               "Cul3",
+               "Cyp26b1",
+               "Dgki",
+               "Dpp4",
+               "Drd2",
+               "Efnb1",
+               "Etf1",
+               "Furin",
+               "Galnt10",
+               "Gatad2a",
+               "Gid4",
+               "Gigyf2",
+               "Gpm6a",
+               "Gramd1b",
+               "Grin2a",
+               "Grm3",
+               "Hcn1",
+               "Igsf9b",
+               "Immp2l",
+               "Itih3",
+               "Itih4",
+               "Kdm4a",
+               "Klc1",
+               "Man2a1",
+               "Mau2",
+               "Mphosph9",
+               "Nfatc3",
+               "Nosip",
+               "Nrgn",
+               "Nxph4",
+               "Pak6",
+               "Pja1",
+               "Plch2",
+               "Ppp1r16b",
+               "Prkd1",
+               "Prrg2",
+               "Ptgis",
+               "Ptprf",
+               "Rgs6",
+               "Rims1",
+               "Satb2",
+               "Sdccag8",
+               "Selenoh",
+               "Sf3b1",
+               "Slc38a7",
+               "Slc39a8",
+               "Slc4a10",
+               "Srpk2",
+               "Srr",
+               "Stag1",
+               "Tbc1d5",
+               "Tcf20",
+               "Tcf4",
+               "Thoc7",
+               "Tmprss5",
+               "Tmtc1",
+               "Tsnare1",
+               "Zfp536",
+               "Zfp804a")
+
+# Generate ADHD gene list
+ADHD_genes <- c("Cadps2",
+                "Fezf1",
+                "Foxp2",
+                "Mettl15",
+                "Ptprf",
+                "Sorcs3",
+                "Spag16")
+
+# Generate Smoking Initiation gene list
+SmokingInit_genes <- c("Acp1",
+                       "Actn2",
+                       "Actr1b",
+                       "Adam15",
+                       "Adgrb2",
+                       "Adgrb3",
+                       "Aff3",
+                       "Alk",
+                       "Ankub1",
+                       "Arap2",
+                       "Arid5b",
+                       "Armh4",
+                       "As3mt",
+                       "Ascc3",
+                       "Auts2",
+                       "Bcl11b",
+                       "Bdnf",
+                       "Bend7",
+                       "Birc6",
+                       "Brinp1",
+                       "Brwd1",
+                       "Btrc",
+                       "Bysl",
+                       "C1qtnf7",
+                       "Cabp1",
+                       "Cacna1d",
+                       "Cadm2",
+                       "Cadps2",
+                       "Cahm",
+                       "Calb1",
+                       "Camta1",
+                       "Car10",
+                       "Cbln4",
+                       "Cc2d2a",
+                       "Ccnd3",
+                       "Celf2",
+                       "Chchd3",
+                       "Chd3",
+                       "Chrna2",
+                       "Chrna4",
+                       "Cilk1",
+                       "Clybl",
+                       "Cntn3",
+                       "Cntn4",
+                       "Cpeb4",
+                       "Cpne4",
+                       "Cpsf6",
+                       "Cpxm2",
+                       "Ctnna2",
+                       "Cul3",
+                       "Cyb5b",
+                       "Dab1",
+                       "Dcc",
+                       "Dgkz",
+                       "Diaph3",
+                       "Dnajc1",
+                       "Dync1i2",
+                       "Eed",
+                       "Efna5",
+                       "Elavl4",
+                       "Elfn1",
+                       "Ell",
+                       "Elovl3",
+                       "Elovl7",
+                       "Entpd6",
+                       "Ephx2",
+                       "Erbb3",
+                       "Erc2",
+                       "Exoc4",
+                       "Fam163a",
+                       "Fam168a",
+                       "Fat3",
+                       "Fbxl17",
+                       "Fbxl22",
+                       "Fezf1",
+                       "Fhit",
+                       "Focad",
+                       "Foxo3",
+                       "Foxp1",
+                       "Gabra6",
+                       "Gapvd1",
+                       "Gbf1",
+                       "Ggact",
+                       "Golga3",
+                       "Gpm6a",
+                       "Grid2",
+                       "Grin2a",
+                       "Hdgfl2",
+                       "Hectd4",
+                       "Herc1",
+                       "Hhla2",
+                       "Hs6st3",
+                       "Ift57",
+                       "Igf1r",
+                       "Igsf21",
+                       "Il11",
+                       "Immp2l",
+                       "Inpp4b",
+                       "Ip6k2",
+                       "Itprip",
+                       "Jade2",
+                       "Kansl1",
+                       "Kcnj3",
+                       "Kdm4b",
+                       "Lingo1",
+                       "Lmo3",
+                       "Lmtk2",
+                       "Lrguk",
+                       "Lrpprc",
+                       "Lrrc4c",
+                       "Mad1l1",
+                       "Magi2",
+                       "Maip1",
+                       "Maml3",
+                       "Mast2",
+                       "Mcrs1",
+                       "Mctp1",
+                       "Med27",
+                       "Mettl15",
+                       "Mfsd4b",
+                       "Mgst1",
+                       "Mllt10",
+                       "Mms22l",
+                       "Msra",
+                       "Mterf1",
+                       "Ncam1",
+                       "Nfat5",
+                       "Nlgn1",
+                       "Nol4",
+                       "Nolc1",
+                       "Nrap",
+                       "Nrxn1",
+                       "Nrxn2",
+                       "Nrxn3",
+                       "Nsf",
+                       "Nt5c2",
+                       "Ntm",
+                       "Nyap2",
+                       "Olfm1",
+                       "Ovol1",
+                       "Pcdh15",
+                       "Pcdh9",
+                       "Pde4b",
+                       "Pgpep1",
+                       "Phc2",
+                       "Phf21a",
+                       "Pigl",
+                       "Pipox",
+                       "Plcl2",
+                       "Pmfbp1",
+                       "Pnmt",
+                       "Polr2f",
+                       "Postn",
+                       "Prickle2",
+                       "Prrc2b",
+                       "Ptger3",
+                       "Ptprd",
+                       "Ptprf",
+                       "Qser1",
+                       "Ranbp17",
+                       "Rasgrf2",
+                       "Rbfox1",
+                       "Rere",
+                       "Rev3l",
+                       "Rfx3",
+                       "Rhot2",
+                       "Rnf13",
+                       "Robo2",
+                       "Rps6ka4",
+                       "Runx1t1",
+                       "Ryr2",
+                       "Scn2a",
+                       "Sdhd",
+                       "Sdk1",
+                       "Sema3f",
+                       "Sema6d",
+                       "Setbp1",
+                       "Sez6",
+                       "Sh3yl1",
+                       "Shtn1",
+                       "Slc4a10",
+                       "Smad3",
+                       "Smarcc1",
+                       "Smg6",
+                       "Sorcs3",
+                       "Sorl1",
+                       "Spg7",
+                       "St6galnac3",
+                       "Stimate",
+                       "Syt14",
+                       "Syt3",
+                       "Tcf20",
+                       "Tenm2",
+                       "Terf2ip",
+                       "Thbs4",
+                       "Thsd7b",
+                       "Tmem18",
+                       "Tmem242",
+                       "Tmtc4",
+                       "Tnni3k",
+                       "Tnrc6a",
+                       "Tox",
+                       "Trim8",
+                       "Trpc4",
+                       "Ttc29",
+                       "Ttl",
+                       "Tulp4",
+                       "Ubap2l",
+                       "Uhrf1",
+                       "Vrk2",
+                       "Wdpcp",
+                       "Xkr6",
+                       "Xylt1",
+                       "Zbtb16",
+                       "Zbtb20",
+                       "Zbtb46",
+                       "Zcchc14",
+                       "Zfhx3",
+                       "Zfp423",
+                       "Zic4")
+
+#Subsample dataset for nicer heatmap and set cluster order
+VTA_adult_small <- subset(VTA_adult, downsample = 75)
+DefaultAssay(VTA_adult_small) <- "RNA"
+RevOrder <- c("DA-Neuron",
+              "Glut-Neuron-1",
+              "Glut-Neuron-2",
+              "Glut-Neuron-3",
+              "GABA-Neuron-1",
+              "GABA-Neuron-2",
+              "Interneuron-1",
+              "Astrocyte",
+              "Microglia",
+              "Olig-1",
+              "Olig-2",
+              "OPC-Olig-1",
+              "OPC-Olig-2",
+              "Polydendrocyte",
+              "Mural",
+              "Endothelial")
+levels(VTA_adult_small) <-RevOrder
+
+#Make heatmaps for MAGMA figure
+DoHeatmap(object = VTA_adult_small,features = AD_genes,disp.min=0,disp.max=3,group.bar=TRUE,slot="data",label = TRUE,draw.lines = TRUE, raster = FALSE) + 
+  theme(axis.text.y = element_text(size = 4)) + 
+  theme(axis.text.x = element_text(size = 5)) + 
+  scale_fill_gradientn(colors = c("lightgray", "red"))
+
+DoHeatmap(object = VTA_adult_small,features = SCZ_genes,disp.min=0,disp.max=3,group.bar=TRUE,slot="data",label = TRUE,draw.lines = TRUE, raster = FALSE) + 
+  theme(axis.text.y = element_text(size = 4)) + 
+  theme(axis.text.x = element_text(size = 5)) + 
+  scale_fill_gradientn(colors = c("lightgray", "red"))
+
+DoHeatmap(object = VTA_adult_small,features = ADHD_genes,disp.min=0,disp.max=3,group.bar=TRUE,slot="data",label = TRUE,draw.lines = TRUE, raster = FALSE) + 
+  theme(axis.text.y = element_text(size = 4)) + 
+  theme(axis.text.x = element_text(size = 5)) + 
+  scale_fill_gradientn(colors = c("lightgray", "red"))
+
+DoHeatmap(object = VTA_adult_small,features = SmokingInit_genes,disp.min=0,disp.max=3,group.bar=TRUE,slot="data",label = TRUE,draw.lines = TRUE, raster = FALSE) + 
+  theme(axis.text.y = element_text(size = 4)) + 
+  theme(axis.text.x = element_text(size = 5)) + 
+  scale_fill_gradientn(colors = c("lightgray", "red"))
+```
+## Generation of Violin Plots and Heatmaps for Supplementary Figure 1
+```{r Supplementary Figure 1, eval = FALSE}
+## Heatmap and count/gene violin plots for Supplementary Figure 1 
+# Find cell-specific markers and make heatmap
+DefaultAssay(VTA_adult) <- "integrated"
+VTA_markers <- FindAllMarkers(VTA_adult, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Genes_Use <- VTA_markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+#Subsample for nicer heatmap
+VTA_adult_small <- subset(VTA_adult, downsample = 75)
+DefaultAssay(VTA_adult_small) <- "integrated"
+DoHeatmap(object = VTA_adult_small,features = Genes_Use$gene,label = FALSE,draw.lines = TRUE, raster = FALSE) + 
+  theme(axis.text.y = element_text(size = 4)) + 
+  scale_fill_gradientn(colors = c("steelblue4", "white", "red"))
+# Plot nFeature_RNA and nCount_RNA by CellType
+levels(VTA_adult) <- NewOrder
+Idents(VTA_adult) <- VTA_adult$CellType
+p1 <- ggplot(VTA_adult@meta.data, aes(Idents(VTA_adult), nFeature_RNA, colour = CellType, label=FALSE)) + 
+  geom_violin() + 
+  theme_bw()  +
+  theme(legend.position = "none")  + 
+  scale_y_log10() +
+  coord_flip()
+p2 <- ggplot(VTA_adult@meta.data, aes(Idents(VTA_adult), nCount_RNA, colour = CellType, label=FALSE)) + 
+  geom_violin() + 
+  theme_bw()  +
+  theme(legend.position = "none")  + 
+  scale_y_log10() +
+  coord_flip()
+plot_grid(p1, p2, labels = c('a', 'b'))
+```
+##Session Info
+```{r SessionInfo}
+sessionInfo()
+```
