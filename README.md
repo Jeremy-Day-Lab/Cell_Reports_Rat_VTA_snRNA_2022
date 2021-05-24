@@ -8,7 +8,7 @@ This page contains R code for analysis of single-nucleus RNA-seq (snRNA-seq) dat
 
 This snRNA-seq dataset was generated from VTA punches from naive adult male and female Sprague Dawley rats.  
 
-Datasets in this preprint used the 10X Genomics Chromium Single Cell 3’ library construction kit to generate barcoded libraries for Illumina sequencing. For each dataset, we provide R Markdown and Word documents containing analysis parameters and code.  
+Datasets in this preprint used the 10X Genomics Chromium Single Cell Next GEM 3’ library construction kit to generate barcoded libraries for Illumina sequencing. For each dataset, we provide R Markdown and Word documents containing analysis parameters and code.  
 
 
 ## **Citation**
