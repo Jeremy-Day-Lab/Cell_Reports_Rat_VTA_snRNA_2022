@@ -32,3 +32,6 @@ GEO accession [GSE137763]()
 ## **Source code**
 All packages required for reproduction of this analysis are included in the session info section of the word doc included in this repository.
 [Seurat v3.2.2](https://github.com/satijalab/seurat)  
+
+## **Docker image**
+A Docker image containing all depedencies needed to reproduce the analysis from the code present in this repository: [Day lab VTA Docker image](https://hub.docker.com/r/daylabprojects/daylab_rat_vta_snrna)
