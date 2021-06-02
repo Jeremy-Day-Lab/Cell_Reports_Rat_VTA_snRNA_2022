@@ -1,7 +1,7 @@
 # **VTA snRNA-seq**
 
 
-This page contains R code for analysis of single-nucleus RNA-seq (snRNA-seq) datasets from "An Atlas of Transcriptionally Distinct Cell Populations within the Rat Ventral Tegmental Area".  R objects containg UMAP coordindates and other metadata characteristics for the complete dataset and neuronal subclustering are available upon request. 
+This page contains R code for analysis of single-nucleus RNA-seq (snRNA-seq) datasets from "_An atlas of transcriptionally defined cell populations in the rat ventral tegmental area_".  R objects containg UMAP coordindates and other metadata characteristics for the complete dataset and neuronal subclustering are available upon request. 
 
 
 ## **Study design**
@@ -13,7 +13,7 @@ Datasets in this preprint used the 10X Genomics Chromium Single Cell Next GEM 3â
 
 ## **Citation**
 
-Phillips III, R.A.* Tuscher, J.J.*, Black, S.L., Ianov, L., & Day, J.J. (2021). A transcriptional atlas of the rat ventral tegmental area at single cell resolution. *bioRxiv* DOI:
+Phillips III, R.A.* Tuscher, J.J.*, Black, S.L., Ianov, L., & Day, J.J. (2021). An atlas of transcriptionally defined cell populations in the rat ventral tegmental area. *bioRxiv* DOI:
 [Link]()
 
 
@@ -26,7 +26,7 @@ All Day lab resources may be found at the [Day Lab website](http://day-lab.org/r
 
 ## **Raw data**
 
-GEO accession [GSE137763]()  
+GEO accession [GSE168156](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE168156)  
 
 
 ## **Source code**
