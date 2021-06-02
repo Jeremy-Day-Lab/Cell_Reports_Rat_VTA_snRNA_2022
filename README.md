@@ -21,7 +21,7 @@ Phillips III, R.A.* Tuscher, J.J.*, Black, S.L., Ianov, L., & Day, J.J. (2021). 
 
 All Day lab resources may be found at the [Day Lab website](http://day-lab.org/resources)  
 [Ratlas Shiny App](https://day-lab.shinyapps.io/ratlas/)  
-[BioRxiv preprint]()  
+[BioRxiv preprint](https://www.biorxiv.org/content/10.1101/2021.06.02.446737v1)  
 
 
 ## **Raw data**
