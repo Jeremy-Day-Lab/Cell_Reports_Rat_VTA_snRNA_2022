@@ -169,7 +169,7 @@ for(i in names(Cluster_Lists)){
   #Create a data.frame where the rownames are the cells within the clusters
   group.info <- data.frame(row.names = c(WhichCells(object = VTA_adult,idents = i),
                                          WhichCells(object = VTA_adult,idents = as.character(unique(Idents(VTA_adult))[which(unique(Idents(VTA_adult))!=i)]))))
-  #Create a group column where cocaine is Group1 and saline is group2. The way to do that is to search the rows names for Cocaine and Saline cell identities
+  #Create a group column where cell type of interest is Group1 and all other cells are group2. 
   group.info[WhichCells(object = VTA_adult,idents = i), "group"] <- "Group1"
   group.info[WhichCells(object = VTA_adult,idents = as.character(unique(Idents(VTA_adult))[which(unique(Idents(VTA_adult))!=i)])), "group"] <- "Group2"
   #Make the group column a factor so it can be tested with the wilcox
