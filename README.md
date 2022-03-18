@@ -35,3 +35,7 @@ All packages required for reproduction of this analysis are included in the sess
 
 ## **Docker image**
 A Docker image containing all depedencies needed to reproduce the analysis from the code present in this repository: [Day lab VTA Docker image](https://hub.docker.com/r/daylabprojects/daylab_rat_vta_snrna)
+
+The Dockerfile associated with this image can be found [here](https://github.com/Jeremy-Day-Lab/VTA_Dockerfiles/blob/master/Dockerfile_additional_seurat_dependencies/Dockerfile)
+
+Overall this image contains the minimum dependencies to reproduce the Day lab VTA analysis code, and a number of additional Seurat dependencies which were not used in the analysis (e.g.: DESeq2, multtest, metap which are needed for specific differential expression parameters or functions such as `FindConservedMarkers`) but can aid in the utilization of the container for exploratory purposes.
