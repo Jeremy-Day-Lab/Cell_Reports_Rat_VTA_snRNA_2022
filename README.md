@@ -13,7 +13,7 @@ Datasets in this preprint used the 10X Genomics Chromium Single Cell Next GEM 3â
 
 ## **Citation**
 __Published manuscript__
-Phillips III, R.A.* Tuscher, J.J.*, Black, S.L., Andraka E., Fitzgerald, N.D., Ianov, L., & Day, J.J. (2021). An atlas of transcriptionally defined cell populations in the rat ventral tegmental area. *Cell Reports* DOI: <https://doi.org/10.1016/j.celrep.2022.110616>
+Phillips III, R.A.* Tuscher, J.J.*, Black, S.L., Andraka E., Fitzgerald, N.D., Ianov, L., & Day, J.J. (2022). An atlas of transcriptionally defined cell populations in the rat ventral tegmental area. *Cell Reports* DOI: <https://doi.org/10.1016/j.celrep.2022.110616>
 [Link](https://www.cell.com/cell-reports/fulltext/S2211-1247(22)00364-3)
 
 __Preprint__
