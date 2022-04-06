@@ -34,9 +34,9 @@ All Day lab resources may be found at the [Day Lab website](http://day-lab.org/r
 GEO accession [GSE168156](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE168156)  
 
 
-## **Source code**
+## **Dependencies to reproduce analysis from source code**
 All packages required for reproduction of this analysis are included in the session info section of the word doc included in this repository.
-[Seurat v3.2.2](https://github.com/satijalab/seurat)  
+[Seurat v3.2.2](https://github.com/satijalab/seurat) is a primary dependency for the analysis. Please see the Docker image below for more information.
 
 ## **Docker image**
 A Docker image containing all depedencies needed to reproduce the analysis from the code present in this repository: [Day lab VTA Docker image](https://hub.docker.com/r/daylabprojects/daylab_rat_vta_snrna)
